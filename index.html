@@ -366,7 +366,7 @@ sidebar{display:flex;flex-direction:column;gap:14px}
     <div class="modal-title" id="modal-cp-title">CHECKPOINT 1</div>
     <div class="modal-sub" id="modal-cp-sub">MAIN GATE — FACE VERIFICATION</div>
 
-    <!-- Camera -->
+    <!-- Camera view -->
     <div class="cam-wrap" id="cam-wrap">
       <video id="cam-video" autoplay playsinline muted></video>
       <canvas id="cam-canvas"></canvas>
@@ -377,7 +377,22 @@ sidebar{display:flex;flex-direction:column;gap:14px}
       <div class="cam-rec" id="cam-rec"><div class="rec-dot"></div>LIVE</div>
       <div class="cam-status" id="cam-status">INITIALIZING…</div>
     </div>
-    <img id="captured-img" alt="Captured"/>
+
+    <!-- Captured image view (hidden until photo taken) -->
+    <div id="captured-frame" style="display:none">
+      <div style="position:relative;border-radius:4px;overflow:hidden;border:2px solid var(--green);box-shadow:0 0 24px rgba(0,232,122,.2)">
+        <img id="captured-img" alt="Captured" style="width:100%;display:block"/>
+        <div style="position:absolute;top:10px;left:10px;display:flex;align-items:center;gap:6px;background:rgba(7,12,18,.8);padding:4px 10px;border-radius:2px;font-size:.6rem;color:var(--green);letter-spacing:1px">
+          <div style="width:7px;height:7px;border-radius:50%;background:var(--green)"></div>
+          CAPTURED
+        </div>
+        <button onclick="retakePhoto()" style="position:absolute;top:10px;right:10px;background:rgba(7,12,18,.85);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:.6rem;letter-spacing:1px;padding:5px 10px;border-radius:2px;cursor:pointer;text-transform:uppercase">⟳ RETAKE</button>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <button class="btn btn-primary" id="btn-verify" onclick="runAIVerify()" style="flex:2;font-size:.78rem;letter-spacing:2px;padding:13px 0">🤖 AI VERIFY &amp; SUBMIT</button>
+        <button class="btn btn-ghost" onclick="closeModal()" style="flex:1">✕ CANCEL</button>
+      </div>
+    </div>
 
     <!-- GPS Panel -->
     <div class="gps-panel">
@@ -425,12 +440,36 @@ const CHECKPOINTS = [
 // Simulated CP positions on SVG for guard trail
 const CP_SVG = {1:[450,530],2:[100,90],3:[420,90],4:[800,90],5:[90,480],6:[490,480],7:[740,480],8:[450,35]};
 
-let currentCPId = null;
-let mediaStream = null;
-let geoWatchId = null;
-let liveGPS = null;
-let capturedDataURL = null;
-let trailPoints = [];
+let currentCPId = null, mediaStream = null, geoWatchId = null;
+let liveGPS = null, capturedDataURL = null, trailPoints = [];
+let demoMode = false;
+
+// ── DEMO: Simulated GPS that slowly drifts ──
+function startDemoGPS(){
+  let lat = 27.4924 + (Math.random()-.5)*.001;
+  let lng = 77.6737 + (Math.random()-.5)*.001;
+  liveGPS = {lat,lng,acc:12,alt:'192.4m',spd:'1.2 km/h',ts:new Date().toLocaleTimeString('en-IN',{hour12:false})};
+  updateLiveBar();
+  setGPSHeader(`${lat.toFixed(4)}, ${lng.toFixed(4)}`,'active');
+  document.getElementById('guard-pos-dot').style.display='block';
+  document.getElementById('map-guard-pos').textContent=`Guard: ${lat.toFixed(4)}, ${lng.toFixed(4)} [DEMO]`;
+  setChip('chip-geo','warn'); setChip('chip-watch','warn');
+  addLog('Demo GPS active — simulated coordinates (Mathura, UP)','warn');
+  setInterval(()=>{
+    lat += (Math.random()-.5)*.00005;
+    lng += (Math.random()-.5)*.00005;
+    liveGPS = {lat,lng,acc:8+Math.round(Math.random()*6),alt:'192.4m',spd:(1+Math.random()).toFixed(1)+' km/h',ts:new Date().toLocaleTimeString('en-IN',{hour12:false})};
+    updateLiveBar();
+  },3000);
+}
+function updateLiveBar(){
+  if(!liveGPS||typeof liveGPS.lat!=='number') return;
+  document.getElementById('live-lat').textContent=`LAT: ${liveGPS.lat.toFixed(6)}`;
+  document.getElementById('live-lng').textContent=`LNG: ${liveGPS.lng.toFixed(6)}`;
+  document.getElementById('live-alt').textContent=`ALT: ${liveGPS.alt}`;
+  document.getElementById('live-spd').textContent=`SPD: ${liveGPS.spd}`;
+  document.getElementById('live-acc-val').textContent=liveGPS.acc;
+}
 
 // ════════════════════════════════════════════════
 //  CLOCK
@@ -546,19 +585,28 @@ function startCamera(){
   document.getElementById('cam-status').textContent = 'REQUESTING CAMERA…';
   document.getElementById('cam-wrap').classList.remove('scanning');
   document.getElementById('btn-capture').disabled = true;
-
   const video = document.getElementById('cam-video');
 
-  // ── Your camera code ──
+  // ── Demo mode: show animated placeholder instead of real camera ──
+  if(demoMode || IN_IFRAME){
+    drawDemoCamera(video);
+    document.getElementById('cam-status').textContent = 'DEMO MODE — SIMULATED FEED';
+    document.getElementById('cam-wrap').classList.add('scanning');
+    document.getElementById('cam-rec').classList.add('show');
+    document.getElementById('btn-capture').disabled = false;
+    setChip('chip-cam','warn');
+    addLog('Camera: demo/simulated feed (iframe restriction)','warn');
+    return;
+  }
+
+  // ── Real camera (your code) ──
   navigator.mediaDevices.getUserMedia({ video: true })
     .then((stream) => {
       video.srcObject = stream;
       mediaStream = stream;
-
       const track = stream.getVideoTracks()[0];
-      const settings = track.getSettings();
-      addLog(`Camera: ${track.label||'Unknown'} | ${settings.width||'?'}x${settings.height||'?'}`, 'tag');
-
+      const s = track.getSettings();
+      addLog(`Camera: ${track.label||'Unknown'} | ${s.width||'?'}x${s.height||'?'}`, 'tag');
       document.getElementById('cam-status').textContent = 'LIVE — ALIGN FACE IN OVAL';
       document.getElementById('cam-wrap').classList.add('scanning');
       document.getElementById('cam-rec').classList.add('show');
@@ -567,11 +615,54 @@ function startCamera(){
     })
     .catch((err) => {
       console.log(err);
-      document.getElementById('cam-status').textContent = 'ERROR: ' + (err.message||err.name).toUpperCase();
-      setChip('chip-cam','err');
-      addLog(`Camera error [${err.name}]: ${err.message}`,'err');
+      // Fallback to demo on any error (including NotAllowedError)
+      addLog(`Camera blocked [${err.name}] — switching to demo feed`,'warn');
+      demoMode = true;
+      drawDemoCamera(video);
+      document.getElementById('cam-status').textContent = 'DEMO MODE ('+err.name+')';
+      document.getElementById('cam-wrap').classList.add('scanning');
       document.getElementById('btn-capture').disabled = false;
+      setChip('chip-cam','warn');
     });
+}
+
+// Draw an animated canvas-based demo "camera" feed
+function drawDemoCamera(video){
+  video.style.display = 'none';
+  const canvas = document.getElementById('cam-canvas');
+  canvas.style.display = 'block';
+  canvas.style.position = 'absolute';
+  canvas.style.inset = '0';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.width = 640; canvas.height = 480;
+  let frame = 0;
+  (function drawFrame(){
+    if(!canvas.isConnected) return;
+    const ctx = canvas.getContext('2d');
+    // Dark background with noise
+    ctx.fillStyle='#0a0f0a'; ctx.fillRect(0,0,640,480);
+    // Noise dots
+    for(let i=0;i<200;i++){
+      ctx.fillStyle=`rgba(0,232,122,${Math.random()*.07})`;
+      ctx.fillRect(Math.random()*640, Math.random()*480, 1, 1);
+    }
+    // Face outline oval
+    ctx.strokeStyle='rgba(0,232,122,0.25)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.ellipse(320,220,110,140,0,0,Math.PI*2); ctx.stroke();
+    // Silhouette
+    const pulse = 0.9 + Math.sin(frame*.06)*.1;
+    ctx.fillStyle=`rgba(0,60,20,${pulse*.3})`;
+    ctx.beginPath(); ctx.ellipse(320,210,90,115,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(320,370,55,40,0,0,Math.PI*2); ctx.fill();
+    // "DEMO" watermark
+    ctx.fillStyle='rgba(0,232,122,0.18)'; ctx.font='bold 52px Share Tech Mono';
+    ctx.textAlign='center'; ctx.fillText('DEMO',320,260);
+    ctx.font='11px Share Tech Mono'; ctx.fillStyle='rgba(0,232,122,0.35)';
+    ctx.fillText('SIMULATED FEED — OPEN AS HTML FILE FOR REAL CAMERA',320,460);
+    frame++;
+    requestAnimationFrame(drawFrame);
+  })();
 }
 
 function stopCamera(){
@@ -589,60 +680,45 @@ function stopCamera(){
 function capturePhoto(){
   const video = document.getElementById('cam-video');
   const canvas = document.getElementById('cam-canvas');
-  const imgEl = document.getElementById('captured-img');
-  const btn = document.getElementById('btn-capture');
-
-  setChip('chip-canvas','ok');
 
   if(mediaStream && video.videoWidth > 0){
     canvas.width  = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
-    // Mirror flip (selfie camera)
-    ctx.translate(canvas.width,0);
-    ctx.scale(-1,1);
-    ctx.drawImage(video,0,0);
+    ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0);
     ctx.setTransform(1,0,0,1,0,0);
-
-    // Draw metadata overlay
     const ts = new Date().toLocaleString('en-IN');
     ctx.fillStyle='rgba(0,0,0,.55)';
-    ctx.fillRect(0,canvas.height-36,canvas.width,36);
+    ctx.fillRect(0, canvas.height-36, canvas.width, 36);
     ctx.fillStyle='#00e87a';
     ctx.font=`${Math.round(canvas.width/55)}px Share Tech Mono`;
-    ctx.fillText(`CP${currentCPId} | ${ts} | GRD-2024-047`,10,canvas.height-12);
-
-    capturedDataURL = canvas.toDataURL('image/jpeg',0.85);
-    imgEl.src = capturedDataURL;
-    imgEl.style.display = 'block';
-    addLog(`Canvas capture: ${canvas.width}x${canvas.height}px frame saved`,'tag');
-
-    // Stop live feed, show captured
-    stopCamera();
-    document.getElementById('btn-verify').style.display = 'inline-flex';
-    document.getElementById('btn-verify').disabled = false;
-    btn.textContent = '⟳ RETAKE';
-    btn.onclick = retakePhoto;
-
-    setGPSDataInModal();
-    showToast('📷 Photo captured — click AI VERIFY or mark checkpoint');
+    ctx.fillText(`CP${currentCPId} | ${ts} | GRD-2024-047`, 10, canvas.height-12);
+    capturedDataURL = canvas.toDataURL('image/jpeg', 0.85);
   } else {
-    // No camera — skip photo
-    capturedDataURL = null;
-    addLog(`CP${currentCPId}: No camera frame — proceeding without photo`,'warn');
-    markCheckpoint(currentCPId);
+    // Demo mode — grab canvas directly
+    capturedDataURL = document.getElementById('cam-canvas').toDataURL('image/jpeg', 0.85);
   }
+
+  // ── Show captured image, hide camera box ──
+  document.getElementById('cam-wrap').style.display = 'none';
+  document.getElementById('captured-img').src = capturedDataURL;
+  document.getElementById('captured-frame').style.display = 'block';
+  document.getElementById('btn-capture-row').style.display = 'none';
+
+  stopCamera();
+  setGPSDataInModal();
+  addLog(`CP${currentCPId}: Photo captured (${canvas.width}x${canvas.height}px)`,'tag');
+  showToast('📷 Photo captured — AI Verify or Cancel');
 }
 
 function retakePhoto(){
-  document.getElementById('captured-img').style.display='none';
-  document.getElementById('captured-img').src='';
-  document.getElementById('btn-verify').style.display='none';
-  document.getElementById('ai-panel').classList.remove('show');
   capturedDataURL = null;
-  document.getElementById('btn-capture').textContent = '⊙ CAPTURE FACE';
-  document.getElementById('btn-capture').onclick = capturePhoto;
-  document.getElementById('btn-capture').disabled = true;
+  document.getElementById('captured-frame').style.display = 'none';
+  document.getElementById('captured-img').src = '';
+  document.getElementById('cam-wrap').style.display = 'block';
+  document.getElementById('btn-capture-row').style.display = 'flex';
+  document.getElementById('ai-panel').classList.remove('show');
   startCamera();
 }
 
@@ -807,13 +883,13 @@ function openScan(id){
   capturedDataURL = null;
   document.getElementById('modal-cp-title').textContent = `CHECKPOINT ${id} — ${cp.name}`;
   document.getElementById('modal-cp-sub').textContent = `${cp.zone} | GPS + Face Verification Required`;
-  document.getElementById('cam-status').textContent = 'INITIALIZING CAMERA…';
+  document.getElementById('cam-wrap').style.display = 'block';
+  document.getElementById('btn-capture-row').style.display = 'flex';
+  document.getElementById('captured-frame').style.display = 'none';
+  document.getElementById('captured-img').src = '';
   document.getElementById('btn-capture').disabled = true;
   document.getElementById('btn-capture').textContent = '⊙ CAPTURE FACE';
   document.getElementById('btn-capture').onclick = capturePhoto;
-  document.getElementById('btn-verify').style.display = 'none';
-  document.getElementById('captured-img').style.display = 'none';
-  document.getElementById('captured-img').src = '';
   document.getElementById('ai-panel').classList.remove('show');
   document.getElementById('m-lat').textContent = '—';
   document.getElementById('m-lng').textContent = '—';
@@ -1017,12 +1093,18 @@ function skipPerms(){
 function launchApp(){
   document.getElementById('perm-gate').style.display = 'none';
   renderList();
-  if(permGPS) initGeolocation();
-  else addLog('GPS skipped — location unavailable','warn');
+  if(demoMode || IN_IFRAME){
+    demoMode = true;
+    startDemoGPS();
+    addLog('Launched in DEMO MODE — save as .html file for real camera & GPS','warn');
+  } else {
+    if(permGPS) initGeolocation();
+    else addLog('GPS skipped','warn');
+  }
   setChip('chip-canvas','ok');
-  if(!permGPS) setChip('chip-geo','err'), setChip('chip-watch','err');
-  if(!permCam) setChip('chip-cam','err');
-  addLog('GuardTrack launched — click any checkpoint to begin scan','tag');
+  if(!permGPS && !demoMode) setChip('chip-geo','err'), setChip('chip-watch','err');
+  if(!permCam && !demoMode) setChip('chip-cam','err');
+  addLog('GuardTrack ready — click any checkpoint to begin scan','tag');
 }
 
 function buildGPS(pos){
