@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>GuardTrack — Live Patrol System</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700;900&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:#070c12; --panel:#0d1520; --border:#1a2d44;
+  --green:#00e87a; --green-dim:#00904c; --red:#ff3b5c;
+  --amber:#ffb930; --cyan:#00d4ff; --text:#c8ddf0; --muted:#4a6580;
+  --mono:'Share Tech Mono',monospace; --display:'Barlow Condensed',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh;overflow-x:hidden}
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,232,122,.012) 2px,rgba(0,232,122,.012) 4px);pointer-events:none;z-index:9999}
+
+header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid var(--border);background:linear-gradient(90deg,#0d1a0f,var(--panel));position:sticky;top:0;z-index:200;flex-wrap:wrap;gap:8px}
+.logo{font-family:var(--display);font-size:1.7rem;font-weight:900;letter-spacing:3px;color:var(--green);text-transform:uppercase}
+.logo span{color:var(--muted);font-weight:300}
+.header-meta{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.hm-item{font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.hm-item strong{display:block;font-size:.8rem;color:var(--cyan)}
+#clock{font-size:1rem;color:var(--green);letter-spacing:2px}
+
+/* GPS live indicator */
+.gps-pill{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;border:1px solid var(--border);font-size:.6rem;letter-spacing:1px}
+.gps-dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.gps-dot.active{background:var(--green);animation:blink 1s infinite}
+.gps-dot.error{background:var(--red)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+main{display:grid;grid-template-columns:1fr 340px;gap:18px;padding:18px 24px;max-width:1300px;margin:0 auto}
+.factory-wrap{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:18px}
+.section-title{font-family:var(--display);font-size:.72rem;font-weight:600;letter-spacing:4px;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.section-title .tag-pill{font-size:.55rem;padding:2px 7px;border-radius:10px;background:rgba(0,232,122,.1);color:var(--green);border:1px solid var(--green-dim)}
+
+/* Live GPS coords bar */
+.live-coords-bar{display:flex;align-items:center;gap:12px;padding:8px 14px;background:rgba(0,212,255,.04);border:1px solid var(--border);border-radius:3px;margin-bottom:14px;font-size:.67rem}
+.live-coords-bar .label{color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-size:.6rem}
+.live-coords-bar .val{color:var(--cyan)}
+.live-acc{margin-left:auto;font-size:.6rem;color:var(--muted)}
+#live-acc-val{color:var(--amber)}
+
+.factory-map{width:100%;border:1px solid var(--border);border-radius:2px}
+.cp-dot{cursor:pointer;transition:transform .2s}
+.cp-dot:hover{transform:scale(1.15)}
+
+/* Guard dot on map */
+#guard-pos-dot{transition:cx .8s ease,cy .8s ease;filter:drop-shadow(0 0 8px #00e87a)}
+
+sidebar{display:flex;flex-direction:column;gap:14px}
+.sidebar{display:flex;flex-direction:column;gap:14px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:14px}
+
+.progress-outer{height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin:10px 0 6px}
+.progress-inner{height:100%;background:var(--green);border-radius:4px;transition:width .6s cubic-bezier(.34,1.56,.64,1);box-shadow:0 0 10px var(--green)}
+.progress-label{display:flex;justify-content:space-between;font-size:.67rem;color:var(--muted)}
+#prog-pct{color:var(--green);font-size:1.35rem;font-family:var(--display);font-weight:700}
+
+.cp-list{display:flex;flex-direction:column;gap:5px;max-height:260px;overflow-y:auto}
+.cp-list::-webkit-scrollbar{width:3px}
+.cp-list::-webkit-scrollbar-thumb{background:var(--green-dim)}
+.cp-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:3px;cursor:pointer;transition:border-color .2s,background .2s;font-size:.7rem}
+.cp-row:hover{border-color:var(--cyan);background:rgba(0,212,255,.04)}
+.cp-row.done{border-color:var(--green-dim);background:rgba(0,232,122,.05)}
+.cp-row.active{border-color:var(--amber);background:rgba(255,185,48,.05)}
+.cp-badge{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.58rem;font-weight:bold;flex-shrink:0;background:var(--border);color:var(--muted)}
+.cp-row.done .cp-badge{background:var(--green);color:#000}
+.cp-row.active .cp-badge{background:var(--amber);color:#000}
+.cp-info{flex:1}
+.cp-name{color:var(--text);letter-spacing:1px;font-size:.68rem}
+.cp-time{color:var(--muted);font-size:.6rem;margin-top:1px}
+.cp-status{font-size:.6rem}
+.cp-row.done .cp-status{color:var(--green)}
+.cp-row.active .cp-status{color:var(--amber)}
+.cp-row:not(.done):not(.active) .cp-status{color:var(--muted)}
+
+.guard-avatar{width:44px;height:44px;border-radius:50%;border:2px solid var(--green);background:var(--border);display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0}
+.guard-meta{flex:1}
+.guard-name{font-family:var(--display);font-size:.95rem;font-weight:700;color:var(--text);letter-spacing:2px}
+.guard-id{font-size:.62rem;color:var(--muted)}
+.guard-row{display:flex;align-items:center;gap:10px}
+.badge-active{font-size:.58rem;letter-spacing:2px;padding:3px 7px;border-radius:2px;background:rgba(0,232,122,.1);color:var(--green);border:1px solid var(--green-dim);white-space:nowrap}
+
+/* ── MODAL ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(7,12,18,.93);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(5px)}
+.modal-overlay.open{display:flex}
+.modal{background:var(--panel);border:1px solid var(--green);border-radius:6px;width:500px;max-width:96vw;padding:22px;box-shadow:0 0 60px rgba(0,232,122,.15);animation:modalIn .3s ease}
+@keyframes modalIn{from{transform:scale(.92) translateY(20px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}
+.modal-title{font-family:var(--display);font-size:1.35rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--green);margin-bottom:3px}
+.modal-sub{font-size:.67rem;color:var(--muted);letter-spacing:1px;margin-bottom:16px}
+
+/* ── CAMERA ── */
+.cam-wrap{position:relative;width:100%;aspect-ratio:4/3;background:#000;border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:12px}
+#cam-video{width:100%;height:100%;object-fit:cover}
+#cam-canvas{display:none}
+.cam-wrap::before,.cam-wrap::after,.cam-corner-bl,.cam-corner-br{content:'';position:absolute;width:22px;height:22px;border-color:var(--green);border-style:solid;z-index:2}
+.cam-wrap::before{top:10px;left:10px;border-width:2px 0 0 2px}
+.cam-wrap::after{top:10px;right:10px;border-width:2px 2px 0 0}
+.cam-corner-bl{bottom:10px;left:10px;border-width:0 0 2px 2px}
+.cam-corner-br{bottom:10px;right:10px;border-width:0 2px 2px 0}
+
+/* Face guide oval */
+.face-oval{position:absolute;top:50%;left:50%;transform:translate(-50%,-54%);width:42%;aspect-ratio:3/4;border:2px dashed rgba(0,232,122,.4);border-radius:50%;z-index:3;pointer-events:none}
+
+.scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--green),transparent);box-shadow:0 0 8px var(--green);animation:scanMove 2s linear infinite;z-index:4;opacity:0}
+.scanning .scan-line{opacity:1}
+@keyframes scanMove{from{top:0}to{top:100%}}
+.cam-status{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);font-size:.62rem;letter-spacing:2px;background:rgba(7,12,18,.85);padding:4px 12px;border-radius:2px;color:var(--amber);text-transform:uppercase;z-index:5;white-space:nowrap}
+.cam-rec{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:5px;font-size:.58rem;color:var(--red);background:rgba(7,12,18,.8);padding:3px 10px;border-radius:2px;z-index:5;display:none}
+.cam-rec.show{display:flex}
+.rec-dot{width:6px;height:6px;border-radius:50%;background:var(--red);animation:blink .8s infinite}
+
+/* GPS in modal */
+.gps-panel{background:rgba(0,212,255,.03);border:1px solid var(--border);border-radius:3px;padding:10px 12px;margin-bottom:12px;font-size:.68rem}
+.gps-panel-title{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px}
+.gps-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.gps-cell{background:rgba(0,0,0,.2);padding:6px 10px;border-radius:2px}
+.gps-cell-label{font-size:.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.gps-cell-val{font-size:.78rem;color:var(--cyan);margin-top:2px}
+.gps-cell.full{grid-column:1/-1}
+
+/* AI verify panel */
+.ai-panel{background:rgba(0,232,122,.03);border:1px solid rgba(0,232,122,.15);border-radius:3px;padding:10px 12px;margin-bottom:12px;font-size:.68rem;display:none}
+.ai-panel.show{display:block}
+.ai-panel-title{font-size:.6rem;color:var(--green-dim);text-transform:uppercase;letter-spacing:2px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.ai-spinner{width:10px;height:10px;border:1px solid var(--green-dim);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#ai-result-text{color:var(--text);line-height:1.6;font-size:.67rem}
+
+.btn-row{display:flex;gap:10px}
+.btn{flex:1;padding:11px 0;border:none;border-radius:3px;font-family:var(--mono);font-size:.75rem;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all .2s}
+.btn-primary{background:var(--green);color:#000;font-weight:bold}
+.btn-primary:hover{background:#00ff88;box-shadow:0 0 20px rgba(0,232,122,.4)}
+.btn-primary:disabled{background:var(--muted);cursor:not-allowed;box-shadow:none;color:#333}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.btn-ghost:hover{border-color:var(--red);color:var(--red)}
+.btn-sm{padding:7px 14px;font-size:.65rem;flex:initial}
+
+#captured-img{width:100%;border-radius:4px;border:2px solid var(--green);display:none;margin-bottom:10px}
+
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--panel);border:1px solid var(--green);border-radius:4px;padding:11px 22px;font-size:.78rem;letter-spacing:1px;color:var(--green);box-shadow:0 0 30px rgba(0,232,122,.2);transition:transform .4s cubic-bezier(.34,1.56,.64,1);z-index:9000;text-align:center}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.warn{border-color:var(--amber);color:var(--amber)}
+.toast.err{border-color:var(--red);color:var(--red)}
+
+.log-wrap{max-height:120px;overflow-y:auto;font-size:.62rem;line-height:1.8}
+.log-wrap::-webkit-scrollbar{width:3px}
+.log-wrap::-webkit-scrollbar-thumb{background:var(--green-dim)}
+.log-entry{color:var(--muted)}
+.log-entry .tag{color:var(--green)}
+.log-entry .warn{color:var(--amber)}
+.log-entry .err{color:var(--red)}
+
+.complete-banner{display:none;background:linear-gradient(135deg,#0d2a18,#0a1f12);border:1px solid var(--green);border-radius:4px;padding:18px;text-align:center;animation:glow 2s ease-in-out infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 20px rgba(0,232,122,.2)}50%{box-shadow:0 0 40px rgba(0,232,122,.5)}}
+.complete-banner.show{display:block}
+.complete-banner h2{font-family:var(--display);font-size:1.7rem;font-weight:900;letter-spacing:4px;color:var(--green);text-transform:uppercase}
+.complete-banner p{font-size:.67rem;color:var(--muted);margin-top:5px}
+
+/* API status strip */
+.api-strip{display:flex;gap:10px;flex-wrap:wrap;padding:8px 24px;background:rgba(0,0,0,.3);border-bottom:1px solid var(--border);font-size:.6rem}
+.api-chip{display:flex;align-items:center;gap:5px;padding:3px 9px;border-radius:12px;border:1px solid var(--border);color:var(--muted)}
+.api-chip .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.api-chip.ok .dot{background:var(--green)}
+.api-chip.ok{color:var(--green);border-color:var(--green-dim)}
+.api-chip.err-chip .dot{background:var(--red)}
+.api-chip.err-chip{color:var(--red);border-color:var(--red)}
+.api-chip.warn-chip .dot{background:var(--amber)}
+.api-chip.warn-chip{color:var(--amber);border-color:var(--amber)}
+
+/* ── PERMISSION GATE ── */
+.perm-card{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:14px 16px;transition:border-color .3s}
+.perm-card.granted{border-color:var(--green-dim);background:rgba(0,232,122,.04)}
+.perm-card.denied{border-color:var(--red);background:rgba(255,59,92,.04)}
+.perm-icon{font-size:1.6rem;flex-shrink:0;width:40px;text-align:center}
+.perm-info{flex:1}
+.perm-title{font-family:var(--display);font-size:.95rem;font-weight:700;letter-spacing:2px;color:var(--text);text-transform:uppercase}
+.perm-desc{font-size:.62rem;color:var(--muted);margin-top:3px;line-height:1.5}
+.perm-badge{font-size:.58rem;letter-spacing:2px;padding:4px 10px;border-radius:3px;border:1px solid var(--border);color:var(--muted);white-space:nowrap;font-family:var(--mono);text-transform:uppercase}
+.perm-badge.granted{background:rgba(0,232,122,.12);color:var(--green);border-color:var(--green-dim)}
+.perm-badge.denied{background:rgba(255,59,92,.1);color:var(--red);border-color:var(--red)}
+.perm-badge.loading{background:rgba(255,185,48,.1);color:var(--amber);border-color:var(--amber);animation:blink .9s infinite}
+
+@media(max-width:900px){main{grid-template-columns:1fr}header{flex-wrap:wrap;gap:8px}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Guard<span>Track</span></div>
+  <div class="header-meta">
+    <div class="hm-item">Shift <strong>ALPHA — NIGHT</strong></div>
+    <div class="hm-item">Facility <strong>UNIT-7 FACTORY</strong></div>
+    <div class="gps-pill" id="gps-pill">
+      <div class="gps-dot" id="gps-header-dot"></div>
+      <span id="gps-header-label">GPS: INIT</span>
+    </div>
+    <div class="hm-item">Time <strong id="clock">--:--:--</strong></div>
+  </div>
+</header>
+
+<!-- API Status Bar -->
+<div class="api-strip" id="api-strip">
+  <div class="api-chip" id="chip-geo"><div class="dot"></div>Geolocation API</div>
+  <div class="api-chip" id="chip-cam"><div class="dot"></div>Camera API</div>
+  <div class="api-chip" id="chip-ai"><div class="dot"></div>AI Verification API</div>
+  <div class="api-chip" id="chip-watch"><div class="dot"></div>GPS Watch Active</div>
+  <div class="api-chip" id="chip-canvas"><div class="dot"></div>Canvas Capture API</div>
+</div>
+
+<main>
+  <!-- FACTORY MAP -->
+  <div class="factory-wrap">
+    <div class="section-title">▸ Factory Floor — Live Patrol Map <span class="tag-pill" id="map-guard-pos">Guard: Locating…</span></div>
+
+    <!-- Live GPS bar -->
+    <div class="live-coords-bar">
+      <span class="label">LIVE GPS</span>
+      <span class="val" id="live-lat">LAT: —</span>
+      <span class="val" id="live-lng">LNG: —</span>
+      <span class="val" id="live-alt">ALT: —</span>
+      <span class="val" id="live-spd">SPD: —</span>
+      <span class="live-acc">±<span id="live-acc-val">—</span>m</span>
+    </div>
+
+    <div style="position:relative">
+    <svg class="factory-map" viewBox="0 0 900 560" xmlns="http://www.w3.org/2000/svg">
+      <rect x="20" y="20" width="860" height="500" fill="none" stroke="#1a2d44" stroke-width="2"/>
+      <rect x="60" y="60" width="200" height="150" fill="rgba(0,212,255,.03)" stroke="#1a2d44" stroke-width="1" rx="2"/>
+      <text x="160" y="148" fill="#2a4060" font-family="Share Tech Mono" font-size="11" text-anchor="middle">PRODUCTION A</text>
+      <rect x="320" y="60" width="200" height="150" fill="rgba(0,212,255,.03)" stroke="#1a2d44" stroke-width="1" rx="2"/>
+      <text x="420" y="148" fill="#2a4060" font-family="Share Tech Mono" font-size="11" text-anchor="middle">PRODUCTION B</text>
+      <rect x="580" y="60" width="240" height="150" fill="rgba(0,212,255,.03)" stroke="#1a2d44" stroke-width="1" rx="2"/>
+      <text x="700" y="148" fill="#2a4060" font-family="Share Tech Mono" font-size="11" text-anchor="middle">WAREHOUSE</text>
+      <rect x="60" y="290" width="280" height="190" fill="rgba(0,212,255,.03)" stroke="#1a2d44" stroke-width="1" rx="2"/>
+      <text x="200" y="393" fill="#2a4060" font-family="Share Tech Mono" font-size="11" text-anchor="middle">ASSEMBLY HALL</text>
+      <rect x="400" y="290" width="180" height="190" fill="rgba(0,212,255,.03)" stroke="#1a2d44" stroke-width="1" rx="2"/>
+      <text x="490" y="393" fill="#2a4060" font-family="Share Tech Mono" font-size="11" text-anchor="middle">CONTROL ROOM</text>
+      <rect x="640" y="290" width="200" height="190" fill="rgba(0,212,255,.03)" stroke="#1a2d44" stroke-width="1" rx="2"/>
+      <text x="740" y="393" fill="#2a4060" font-family="Share Tech Mono" font-size="11" text-anchor="middle">STORAGE</text>
+      <!-- path dashes -->
+      <line x1="260" y1="60" x2="320" y2="60" stroke="#1a2d44" stroke-width="1" stroke-dasharray="4"/>
+      <line x1="520" y1="60" x2="580" y2="60" stroke="#1a2d44" stroke-width="1" stroke-dasharray="4"/>
+      <line x1="160" y1="210" x2="160" y2="290" stroke="#1a2d44" stroke-width="1" stroke-dasharray="4"/>
+      <line x1="420" y1="210" x2="420" y2="290" stroke="#1a2d44" stroke-width="1" stroke-dasharray="4"/>
+      <line x1="700" y1="210" x2="700" y2="290" stroke="#1a2d44" stroke-width="1" stroke-dasharray="4"/>
+      <!-- Guard trail polyline -->
+      <polyline id="guard-trail" points="" fill="none" stroke="rgba(0,232,122,.35)" stroke-width="2" stroke-dasharray="5,4"/>
+      <!-- Checkpoint dots -->
+      <g class="cp-dot" id="svgcp-1" onclick="openScan(1)"><circle cx="450" cy="530" r="14" fill="#4a6580"/><text x="450" y="535" fill="#000" font-family="Share Tech Mono" font-size="10" font-weight="bold" text-anchor="middle">1</text></g>
+      <g class="cp-dot" id="svgcp-2" onclick="openScan(2)"><circle cx="100" cy="90" r="14" fill="#4a6580"/><text x="100" y="95" fill="#000" font-family="Share Tech Mono" font-size="10" font-weight="bold" text-anchor="middle">2</text></g>
+      <g class="cp-dot" id="svgcp-3" onclick="openScan(3)"><circle cx="420" cy="90" r="14" fill="#4a6580"/><text x="420" y="95" fill="#000" font-family="Share Tech Mono" font-size="10" font-weight="bold" text-anchor="middle">3</text></g>
+      <g class="cp-dot" id="svgcp-4" onclick="openScan(4)"><circle cx="800" cy="90" r="14" fill="#4a6580"/><text x="800" y="95" fill="#000" font-family="Share Tech Mono" font-size="10" font-weight="bold" text-anchor="middle">4</text></g>
+      <g class="cp-dot" id="svgcp-5" onclick="openScan(5)"><circle cx="90" cy="480" r="14" fill="#4a6580"/><text x="90" y="485" fill="#000" font-family="Share Tech Mono" font-size="10" font-weight="bold" text-anchor="middle">5</text></g>
+      <g class="cp-dot" id="svgcp-6" onclick="openScan(6)"><circle cx="490" cy="480" r="14" fill="#4a6580"/><text x="490" y="485" fill="#000" font-family="Share Tech Mono" font-size="10" font-weight="bold" text-anchor="middle">6</text></g>
+      <g class="cp-dot" id="svgcp-7" onclick="openScan(7)"><circle cx="740" cy="480" r="14" fill="#4a6580"/><text x="740" y="485" fill="#000" font-family="Share Tech Mono" font-size="10" font-weight="bold" text-anchor="middle">7</text></g>
+      <g class="cp-dot" id="svgcp-8" onclick="openScan(8)"><circle cx="450" cy="35" r="14" fill="#4a6580"/><text x="450" y="40" fill="#000" font-family="Share Tech Mono" font-size="10" font-weight="bold" text-anchor="middle">8</text></g>
+      <!-- Live guard dot -->
+      <g id="guard-pos-dot" style="display:none">
+        <circle cx="450" cy="530" r="10" fill="none" stroke="#00e87a" stroke-width="2" opacity=".5"><animate attributeName="r" values="10;18;10" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values=".5;0;.5" dur="2s" repeatCount="indefinite"/></circle>
+        <circle cx="450" cy="530" r="6" fill="#00e87a" id="guard-dot-inner"/>
+        <text x="450" y="510" fill="#00e87a" font-family="Share Tech Mono" font-size="9" text-anchor="middle" id="guard-dot-label">GUARD</text>
+      </g>
+      <!-- Legend -->
+      <circle cx="30" cy="548" r="5" fill="#4a6580"/>
+      <text x="40" y="552" fill="#4a6580" font-family="Share Tech Mono" font-size="9">PENDING</text>
+      <circle cx="110" cy="548" r="5" fill="#ffb930"/>
+      <text x="120" y="552" fill="#4a6580" font-family="Share Tech Mono" font-size="9">ACTIVE</text>
+      <circle cx="185" cy="548" r="5" fill="#00e87a"/>
+      <text x="195" y="552" fill="#4a6580" font-family="Share Tech Mono" font-size="9">DONE</text>
+      <circle cx="250" cy="548" r="5" fill="#00e87a" opacity=".6"/>
+      <text x="260" y="552" fill="#4a6580" font-family="Share Tech Mono" font-size="9">GUARD LIVE</text>
+    </svg>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="card">
+      <div class="section-title">▸ On-Duty Guard</div>
+      <div class="guard-row">
+        <div class="guard-avatar">👮</div>
+        <div class="guard-meta">
+          <div class="guard-name">RAMESH KUMAR</div>
+          <div class="guard-id">ID: GRD-2024-047 | SHIFT: 22:00–06:00</div>
+        </div>
+        <div class="badge-active">● ON DUTY</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">▸ Tour Progress</div>
+      <div id="prog-pct">0%</div>
+      <div class="progress-outer"><div class="progress-inner" id="progress-bar" style="width:0%"></div></div>
+      <div class="progress-label">
+        <span id="prog-done">0 / 8 visited</span>
+        <span id="prog-remaining">8 remaining</span>
+      </div>
+    </div>
+
+    <div class="card" style="flex:1">
+      <div class="section-title">▸ Checkpoints</div>
+      <div class="cp-list" id="cp-list"></div>
+    </div>
+
+    <div class="complete-banner" id="complete-banner">
+      <h2>✓ Tour Complete</h2>
+      <p id="complete-time">All 8 checkpoints verified</p>
+    </div>
+
+    <div class="card">
+      <div class="section-title">▸ Event Log</div>
+      <div class="log-wrap" id="event-log">
+        <div class="log-entry"><span class="tag">[SYS]</span> GuardTrack v3.0 — APIs initializing…</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ══ PERMISSION GATE ══ -->
+<div id="perm-gate" style="display:flex;position:fixed;inset:0;z-index:5000;background:var(--bg);align-items:center;justify-content:center;flex-direction:column;gap:0;padding:24px">
+  <div style="font-family:var(--display);font-size:2rem;font-weight:900;letter-spacing:4px;color:var(--green);margin-bottom:4px">GUARDTRACK</div>
+  <div style="font-size:.65rem;color:var(--muted);letter-spacing:3px;margin-bottom:32px;text-transform:uppercase">Patrol Verification System — Permission Setup</div>
+
+  <div style="width:100%;max-width:420px;display:flex;flex-direction:column;gap:12px">
+
+    <!-- GPS Permission Card -->
+    <div class="perm-card" id="perm-card-gps">
+      <div class="perm-icon" id="perm-icon-gps">📍</div>
+      <div class="perm-info">
+        <div class="perm-title">Location / GPS</div>
+        <div class="perm-desc">Required to record your coordinates at each checkpoint for audit logs.</div>
+      </div>
+      <div class="perm-badge" id="perm-badge-gps">PENDING</div>
+    </div>
+
+    <!-- Camera Permission Card -->
+    <div class="perm-card" id="perm-card-cam">
+      <div class="perm-icon" id="perm-icon-cam">📷</div>
+      <div class="perm-info">
+        <div class="perm-title">Camera</div>
+        <div class="perm-desc">Required to capture guard face photos at each checkpoint for identity verification.</div>
+      </div>
+      <div class="perm-badge" id="perm-badge-cam">PENDING</div>
+    </div>
+
+    <!-- Status message -->
+    <div id="perm-msg" style="font-size:.7rem;color:var(--muted);text-align:center;min-height:20px;letter-spacing:1px;margin-top:4px"></div>
+
+    <!-- CTA Buttons -->
+    <button id="btn-grant-all" onclick="requestAllPerms()" class="btn btn-primary" style="margin-top:8px;padding:14px;font-size:.8rem;letter-spacing:3px">
+      ⚡ GRANT PERMISSIONS &amp; LAUNCH
+    </button>
+    <button onclick="skipPerms()" style="background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:.62rem;letter-spacing:2px;cursor:pointer;padding:6px;text-transform:uppercase">
+      Skip (limited functionality)
+    </button>
+  </div>
+</div>
+
+<!-- ══ SCAN MODAL ══ -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-cp-title">CHECKPOINT 1</div>
+    <div class="modal-sub" id="modal-cp-sub">MAIN GATE — FACE VERIFICATION</div>
+
+    <!-- Camera -->
+    <div class="cam-wrap" id="cam-wrap">
+      <video id="cam-video" autoplay playsinline muted></video>
+      <canvas id="cam-canvas"></canvas>
+      <div class="face-oval"></div>
+      <div class="scan-line"></div>
+      <div class="cam-corner-bl"></div>
+      <div class="cam-corner-br"></div>
+      <div class="cam-rec" id="cam-rec"><div class="rec-dot"></div>LIVE</div>
+      <div class="cam-status" id="cam-status">INITIALIZING…</div>
+    </div>
+    <img id="captured-img" alt="Captured"/>
+
+    <!-- GPS Panel -->
+    <div class="gps-panel">
+      <div class="gps-panel-title">📍 GPS Location — Checkpoint Verification</div>
+      <div class="gps-grid">
+        <div class="gps-cell"><div class="gps-cell-label">Latitude</div><div class="gps-cell-val" id="m-lat">—</div></div>
+        <div class="gps-cell"><div class="gps-cell-label">Longitude</div><div class="gps-cell-val" id="m-lng">—</div></div>
+        <div class="gps-cell"><div class="gps-cell-label">Accuracy</div><div class="gps-cell-val" id="m-acc">—</div></div>
+        <div class="gps-cell"><div class="gps-cell-label">Altitude</div><div class="gps-cell-val" id="m-alt">—</div></div>
+        <div class="gps-cell full"><div class="gps-cell-label">Timestamp</div><div class="gps-cell-val" id="m-ts">—</div></div>
+      </div>
+    </div>
+
+    <!-- AI Result Panel -->
+    <div class="ai-panel" id="ai-panel">
+      <div class="ai-panel-title"><div class="ai-spinner" id="ai-spinner"></div><span id="ai-panel-title-text">AI VERIFYING IMAGE…</span></div>
+      <div id="ai-result-text">Analyzing captured image…</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-capture" onclick="capturePhoto()" disabled>⊙ CAPTURE FACE</button>
+      <button class="btn btn-primary btn-sm" id="btn-verify" onclick="runAIVerify()" disabled style="display:none">🤖 AI VERIFY</button>
+      <button class="btn btn-ghost" onclick="closeModal()">✕ CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════
+//  DATA
+// ════════════════════════════════════════════════
+const CHECKPOINTS = [
+  {id:1,name:"MAIN GATE",zone:"Perimeter South",time:null,coords:null,photo:null,ai:null},
+  {id:2,name:"PRODUCTION A",zone:"Zone A — North",time:null,coords:null,photo:null,ai:null},
+  {id:3,name:"PRODUCTION B",zone:"Zone B — North",time:null,coords:null,photo:null,ai:null},
+  {id:4,name:"WAREHOUSE",zone:"Zone C — East",time:null,coords:null,photo:null,ai:null},
+  {id:5,name:"ASSEMBLY HALL",zone:"Zone D — South",time:null,coords:null,photo:null,ai:null},
+  {id:6,name:"CONTROL ROOM",zone:"Zone E — Center",time:null,coords:null,photo:null,ai:null},
+  {id:7,name:"STORAGE",zone:"Zone F — East",time:null,coords:null,photo:null,ai:null},
+  {id:8,name:"PERIMETER NORTH",zone:"Perimeter North",time:null,coords:null,photo:null,ai:null},
+];
+
+// Simulated CP positions on SVG for guard trail
+const CP_SVG = {1:[450,530],2:[100,90],3:[420,90],4:[800,90],5:[90,480],6:[490,480],7:[740,480],8:[450,35]};
+
+let currentCPId = null, mediaStream = null, geoWatchId = null;
+let liveGPS = null, capturedDataURL = null, trailPoints = [];
+let demoMode = false;
+
+// ── DEMO: Simulated GPS that slowly drifts ──
+function startDemoGPS(){
+  let lat = 27.4924 + (Math.random()-.5)*.001;
+  let lng = 77.6737 + (Math.random()-.5)*.001;
+  liveGPS = {lat,lng,acc:12,alt:'192.4m',spd:'1.2 km/h',ts:new Date().toLocaleTimeString('en-IN',{hour12:false})};
+  updateLiveBar();
+  setGPSHeader(`${lat.toFixed(4)}, ${lng.toFixed(4)}`,'active');
+  document.getElementById('guard-pos-dot').style.display='block';
+  document.getElementById('map-guard-pos').textContent=`Guard: ${lat.toFixed(4)}, ${lng.toFixed(4)} [DEMO]`;
+  setChip('chip-geo','warn'); setChip('chip-watch','warn');
+  addLog('Demo GPS active — simulated coordinates (Mathura, UP)','warn');
+  setInterval(()=>{
+    lat += (Math.random()-.5)*.00005;
+    lng += (Math.random()-.5)*.00005;
+    liveGPS = {lat,lng,acc:8+Math.round(Math.random()*6),alt:'192.4m',spd:(1+Math.random()).toFixed(1)+' km/h',ts:new Date().toLocaleTimeString('en-IN',{hour12:false})};
+    updateLiveBar();
+  },3000);
+}
+function updateLiveBar(){
+  if(!liveGPS||typeof liveGPS.lat!=='number') return;
+  document.getElementById('live-lat').textContent=`LAT: ${liveGPS.lat.toFixed(6)}`;
+  document.getElementById('live-lng').textContent=`LNG: ${liveGPS.lng.toFixed(6)}`;
+  document.getElementById('live-alt').textContent=`ALT: ${liveGPS.alt}`;
+  document.getElementById('live-spd').textContent=`SPD: ${liveGPS.spd}`;
+  document.getElementById('live-acc-val').textContent=liveGPS.acc;
+}
+
+// ════════════════════════════════════════════════
+//  CLOCK
+// ════════════════════════════════════════════════
+function tick(){
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString('en-IN',{hour12:false});
+}
+setInterval(tick,1000); tick();
+
+// ════════════════════════════════════════════════
+//  API — GEOLOCATION (watchPosition continuous)
+// ════════════════════════════════════════════════
+function initGeolocation(){
+  if(!('geolocation' in navigator)){
+    setChip('chip-geo','err'); setChip('chip-watch','err');
+    addLog('Geolocation API not supported','err');
+    setGPSHeader('NO GPS','error'); return;
+  }
+  setChip('chip-geo','ok');
+  addLog('Geolocation API ready — acquiring position…','tag');
+
+  // ── Your geolocation code (wrapped in watchPosition for live updates) ──
+  function getLocation() {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        console.log("Latitude:", position.coords.latitude);
+        console.log("Longitude:", position.coords.longitude);
+        onGPSSuccess(position);
+      },
+      (error) => {
+        console.log(error.message);
+        onGPSError(error);
+      }
+    );
+  }
+  getLocation(); // first fix immediately
+
+  // Also watch continuously for live map updates
+  geoWatchId = navigator.geolocation.watchPosition(
+    (position) => {
+      console.log("Latitude:", position.coords.latitude);
+      console.log("Longitude:", position.coords.longitude);
+      onGPSSuccess(position);
+    },
+    (error) => {
+      console.log(error.message);
+      onGPSError(error);
+    }
+  );
+  if(geoWatchId != null){
+    setChip('chip-watch','ok');
+    addLog(`GPS watchPosition active (id: ${geoWatchId})`,'tag');
+  }
+}
+
+function onGPSSuccess(pos){
+  const c = pos.coords;
+  liveGPS = {
+    lat: c.latitude,
+    lng: c.longitude,
+    acc: Math.round(c.accuracy),
+    alt: c.altitude ? c.altitude.toFixed(1)+'m' : 'N/A',
+    spd: c.speed ? (c.speed*3.6).toFixed(1)+' km/h' : 'N/A',
+    ts:  new Date(pos.timestamp).toLocaleTimeString('en-IN',{hour12:false})
+  };
+  // Update live bar
+  document.getElementById('live-lat').textContent = `LAT: ${c.latitude.toFixed(6)}`;
+  document.getElementById('live-lng').textContent = `LNG: ${c.longitude.toFixed(6)}`;
+  document.getElementById('live-alt').textContent = `ALT: ${liveGPS.alt}`;
+  document.getElementById('live-spd').textContent = `SPD: ${liveGPS.spd}`;
+  document.getElementById('live-acc-val').textContent = liveGPS.acc;
+  setGPSHeader(`${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}`,'active');
+  document.getElementById('map-guard-pos').textContent = `Guard: ${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}`;
+
+  // Show animated guard dot (position is simulated on SVG — real coords shown in bar)
+  const dot = document.getElementById('guard-pos-dot');
+  dot.style.display = 'block';
+
+  // Update modal if open
+  if(currentCPId){
+    document.getElementById('m-lat').textContent = c.latitude.toFixed(7);
+    document.getElementById('m-lng').textContent = c.longitude.toFixed(7);
+    document.getElementById('m-acc').textContent = `±${liveGPS.acc}m`;
+    document.getElementById('m-alt').textContent = liveGPS.alt;
+    document.getElementById('m-ts').textContent = liveGPS.ts;
+  }
+}
+
+function onGPSError(e){
+  const msgs = {1:'Permission denied',2:'Position unavailable',3:'Timeout'};
+  const msg = msgs[e.code] || e.message;
+  setGPSHeader('GPS ERROR','error');
+  setChip('chip-watch','err');
+  addLog(`GPS Error: ${msg}`,'err');
+  // Fallback: mark GPS as unavailable but allow scanning
+  liveGPS = {lat:'N/A',lng:'N/A',acc:'N/A',alt:'N/A',spd:'N/A',ts:'N/A'};
+  document.getElementById('live-lat').textContent = 'GPS: ' + msg;
+}
+
+function setGPSHeader(label, state){
+  const dot = document.getElementById('gps-header-dot');
+  const lbl = document.getElementById('gps-header-label');
+  dot.className = 'gps-dot' + (state==='active'?' active':state==='error'?' error':'');
+  lbl.textContent = 'GPS: ' + label;
+}
+
+// ════════════════════════════════════════════════
+//  API — CAMERA (getUserMedia)
+// ════════════════════════════════════════════════
+function startCamera(){
+  stopCamera();
+  document.getElementById('cam-status').textContent = 'REQUESTING CAMERA…';
+  document.getElementById('cam-wrap').classList.remove('scanning');
+  document.getElementById('btn-capture').disabled = true;
+  const video = document.getElementById('cam-video');
+
+  // ── Demo mode: show animated placeholder instead of real camera ──
+  if(demoMode || IN_IFRAME){
+    drawDemoCamera(video);
+    document.getElementById('cam-status').textContent = 'DEMO MODE — SIMULATED FEED';
+    document.getElementById('cam-wrap').classList.add('scanning');
+    document.getElementById('cam-rec').classList.add('show');
+    document.getElementById('btn-capture').disabled = false;
+    setChip('chip-cam','warn');
+    addLog('Camera: demo/simulated feed (iframe restriction)','warn');
+    return;
+  }
+
+  // ── Real camera (your code) ──
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then((stream) => {
+      video.srcObject = stream;
+      mediaStream = stream;
+      const track = stream.getVideoTracks()[0];
+      const s = track.getSettings();
+      addLog(`Camera: ${track.label||'Unknown'} | ${s.width||'?'}x${s.height||'?'}`, 'tag');
+      document.getElementById('cam-status').textContent = 'LIVE — ALIGN FACE IN OVAL';
+      document.getElementById('cam-wrap').classList.add('scanning');
+      document.getElementById('cam-rec').classList.add('show');
+      document.getElementById('btn-capture').disabled = false;
+      setChip('chip-cam','ok');
+    })
+    .catch((err) => {
+      console.log(err);
+      // Fallback to demo on any error (including NotAllowedError)
+      addLog(`Camera blocked [${err.name}] — switching to demo feed`,'warn');
+      demoMode = true;
+      drawDemoCamera(video);
+      document.getElementById('cam-status').textContent = 'DEMO MODE ('+err.name+')';
+      document.getElementById('cam-wrap').classList.add('scanning');
+      document.getElementById('btn-capture').disabled = false;
+      setChip('chip-cam','warn');
+    });
+}
+
+// Draw an animated canvas-based demo "camera" feed
+function drawDemoCamera(video){
+  video.style.display = 'none';
+  const canvas = document.getElementById('cam-canvas');
+  canvas.style.display = 'block';
+  canvas.style.position = 'absolute';
+  canvas.style.inset = '0';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.width = 640; canvas.height = 480;
+  let frame = 0;
+  (function drawFrame(){
+    if(!canvas.isConnected) return;
+    const ctx = canvas.getContext('2d');
+    // Dark background with noise
+    ctx.fillStyle='#0a0f0a'; ctx.fillRect(0,0,640,480);
+    // Noise dots
+    for(let i=0;i<200;i++){
+      ctx.fillStyle=`rgba(0,232,122,${Math.random()*.07})`;
+      ctx.fillRect(Math.random()*640, Math.random()*480, 1, 1);
+    }
+    // Face outline oval
+    ctx.strokeStyle='rgba(0,232,122,0.25)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.ellipse(320,220,110,140,0,0,Math.PI*2); ctx.stroke();
+    // Silhouette
+    const pulse = 0.9 + Math.sin(frame*.06)*.1;
+    ctx.fillStyle=`rgba(0,60,20,${pulse*.3})`;
+    ctx.beginPath(); ctx.ellipse(320,210,90,115,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(320,370,55,40,0,0,Math.PI*2); ctx.fill();
+    // "DEMO" watermark
+    ctx.fillStyle='rgba(0,232,122,0.18)'; ctx.font='bold 52px Share Tech Mono';
+    ctx.textAlign='center'; ctx.fillText('DEMO',320,260);
+    ctx.font='11px Share Tech Mono'; ctx.fillStyle='rgba(0,232,122,0.35)';
+    ctx.fillText('SIMULATED FEED — OPEN AS HTML FILE FOR REAL CAMERA',320,460);
+    frame++;
+    requestAnimationFrame(drawFrame);
+  })();
+}
+
+function stopCamera(){
+  if(mediaStream){
+    mediaStream.getTracks().forEach(t=>t.stop());
+    mediaStream = null;
+  }
+  document.getElementById('cam-wrap').classList.remove('scanning');
+  document.getElementById('cam-rec').classList.remove('show');
+}
+
+// ════════════════════════════════════════════════
+//  API — CANVAS (capture frame)
+// ════════════════════════════════════════════════
+function capturePhoto(){
+  const video = document.getElementById('cam-video');
+  const canvas = document.getElementById('cam-canvas');
+  const imgEl = document.getElementById('captured-img');
+  const btn = document.getElementById('btn-capture');
+
+  setChip('chip-canvas','ok');
+
+  if(mediaStream && video.videoWidth > 0){
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    // Mirror flip (selfie camera)
+    ctx.translate(canvas.width,0);
+    ctx.scale(-1,1);
+    ctx.drawImage(video,0,0);
+    ctx.setTransform(1,0,0,1,0,0);
+
+    // Draw metadata overlay
+    const ts = new Date().toLocaleString('en-IN');
+    ctx.fillStyle='rgba(0,0,0,.55)';
+    ctx.fillRect(0,canvas.height-36,canvas.width,36);
+    ctx.fillStyle='#00e87a';
+    ctx.font=`${Math.round(canvas.width/55)}px Share Tech Mono`;
+    ctx.fillText(`CP${currentCPId} | ${ts} | GRD-2024-047`,10,canvas.height-12);
+
+    capturedDataURL = canvas.toDataURL('image/jpeg',0.85);
+    imgEl.src = capturedDataURL;
+    imgEl.style.display = 'block';
+    addLog(`Canvas capture: ${canvas.width}x${canvas.height}px frame saved`,'tag');
+
+    // Stop live feed, show captured
+    stopCamera();
+    document.getElementById('btn-verify').style.display = 'inline-flex';
+    document.getElementById('btn-verify').disabled = false;
+    btn.textContent = '⟳ RETAKE';
+    btn.onclick = retakePhoto;
+
+    setGPSDataInModal();
+    showToast('📷 Photo captured — click AI VERIFY or mark checkpoint');
+  } else {
+    // No camera — skip photo
+    capturedDataURL = null;
+    addLog(`CP${currentCPId}: No camera frame — proceeding without photo`,'warn');
+    markCheckpoint(currentCPId);
+  }
+}
+
+function retakePhoto(){
+  document.getElementById('captured-img').style.display='none';
+  document.getElementById('captured-img').src='';
+  document.getElementById('btn-verify').style.display='none';
+  document.getElementById('ai-panel').classList.remove('show');
+  capturedDataURL = null;
+  document.getElementById('btn-capture').textContent = '⊙ CAPTURE FACE';
+  document.getElementById('btn-capture').onclick = capturePhoto;
+  document.getElementById('btn-capture').disabled = true;
+  startCamera();
+}
+
+function setGPSDataInModal(){
+  if(!liveGPS) return;
+  const fix = typeof liveGPS.lat === 'number';
+  document.getElementById('m-lat').textContent = fix ? liveGPS.lat.toFixed(7) : liveGPS.lat;
+  document.getElementById('m-lng').textContent = fix ? liveGPS.lng.toFixed(7) : liveGPS.lng;
+  document.getElementById('m-acc').textContent = fix ? `±${liveGPS.acc}m` : 'N/A';
+  document.getElementById('m-alt').textContent = liveGPS.alt;
+  document.getElementById('m-ts').textContent = liveGPS.ts;
+}
+
+// ════════════════════════════════════════════════
+//  API — ANTHROPIC AI VERIFICATION
+// ════════════════════════════════════════════════
+async function runAIVerify(){
+  const panel = document.getElementById('ai-panel');
+  const spinner = document.getElementById('ai-spinner');
+  const titleEl = document.getElementById('ai-panel-title-text');
+  const resultEl = document.getElementById('ai-result-text');
+  const btn = document.getElementById('btn-verify');
+
+  panel.classList.add('show');
+  btn.disabled = true;
+  spinner.style.display = 'block';
+  titleEl.textContent = 'AI VERIFYING IMAGE…';
+  resultEl.textContent = 'Sending image to AI verification engine…';
+  setChip('chip-ai','warn');
+
+  try {
+    const cp = CHECKPOINTS.find(c=>c.id===currentCPId);
+    const gpsStr = liveGPS && typeof liveGPS.lat === 'number'
+      ? `${liveGPS.lat.toFixed(6)}, ${liveGPS.lng.toFixed(6)} (±${liveGPS.acc}m)`
+      : 'GPS unavailable';
+
+    const messages = [{
+      role:'user',
+      content: capturedDataURL
+        ? [
+            {type:'image',source:{type:'base64',media_type:'image/jpeg',data:capturedDataURL.split(',')[1]}},
+            {type:'text',text:`You are a guard tour verification AI. Analyze this captured image from a security checkpoint scan.
+Checkpoint: ${cp.id} — ${cp.name} (${cp.zone})
+Guard ID: GRD-2024-047
+GPS: ${gpsStr}
+Time: ${new Date().toLocaleString('en-IN')}
+
+Please verify:
+1. Is a person visible? (yes/no)
+2. Is the image clear enough to identify someone? (yes/no)
+3. Any security concerns or anomalies in the image?
+4. Verification status: APPROVED / NEEDS REVIEW / REJECTED
+
+Keep response concise (3–5 lines). End with: STATUS: [APPROVED/NEEDS REVIEW/REJECTED]`}
+          ]
+        : [{type:'text',text:`Guard tour checkpoint scan — no photo captured.
+Checkpoint: ${cp.id} — ${cp.name} | GPS: ${gpsStr}
+Issue: Camera was unavailable. Please confirm if manual verification is acceptable.
+Respond with STATUS: NEEDS REVIEW and a brief note.`}]
+    }];
+
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:300,
+        system:'You are a concise security checkpoint verification AI. Analyze images from guard patrol scans and give brief, factual assessments.',
+        messages
+      })
+    });
+
+    if(!res.ok){
+      const err = await res.json().catch(()=>({error:{message:'Unknown error'}}));
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const aiText = data.content.filter(b=>b.type==='text').map(b=>b.text).join(' ');
+
+    spinner.style.display = 'none';
+    titleEl.textContent = 'AI VERIFICATION COMPLETE';
+    resultEl.textContent = aiText;
+    setChip('chip-ai','ok');
+
+    const cp2 = CHECKPOINTS.find(c=>c.id===currentCPId);
+    cp2.ai = aiText;
+    addLog(`CP${currentCPId} AI: ${aiText.substring(0,80)}…`,'tag');
+
+    // Auto-approve if AI says APPROVED
+    if(aiText.includes('APPROVED')){
+      resultEl.innerHTML = aiText + '<br><br><strong style="color:var(--green)">✓ Auto-approving checkpoint…</strong>';
+      setTimeout(()=>markCheckpoint(currentCPId),1500);
+    } else {
+      // Show mark button anyway
+      document.getElementById('btn-verify').textContent = '✓ MARK CHECKPOINT';
+      document.getElementById('btn-verify').onclick = ()=>markCheckpoint(currentCPId);
+      document.getElementById('btn-verify').disabled = false;
+    }
+
+  } catch(e) {
+    spinner.style.display = 'none';
+    titleEl.textContent = 'AI VERIFICATION ERROR';
+    resultEl.innerHTML = `<span style="color:var(--amber)">AI API error: ${e.message}. You can still mark checkpoint manually.</span>`;
+    setChip('chip-ai','err');
+    addLog(`AI API error: ${e.message}`,'err');
+    document.getElementById('btn-verify').textContent = '✓ MARK ANYWAY';
+    document.getElementById('btn-verify').onclick = ()=>markCheckpoint(currentCPId);
+    document.getElementById('btn-verify').disabled = false;
+  }
+}
+
+// ════════════════════════════════════════════════
+//  MARK CHECKPOINT
+// ════════════════════════════════════════════════
+function markCheckpoint(id){
+  const cp = CHECKPOINTS.find(c=>c.id===id);
+  const now = new Date();
+  cp.time = now.toLocaleTimeString('en-IN',{hour12:false});
+  cp.coords = liveGPS && typeof liveGPS.lat === 'number'
+    ? `${liveGPS.lat.toFixed(6)}, ${liveGPS.lng.toFixed(6)}`
+    : 'N/A';
+  cp.photo = capturedDataURL;
+
+  updateMapDot(id,'done');
+  // Add to trail
+  if(CP_SVG[id]){
+    trailPoints.push(CP_SVG[id]);
+    updateTrail();
+  }
+  renderList();
+  addLog(`CP${id} [${cp.name}]: VERIFIED ✓ at ${cp.time} | GPS: ${cp.coords}`,'tag');
+  showToast(`✓ CP${id} — ${cp.name} verified at ${cp.time}`);
+  stopCamera();
+  document.getElementById('modal').classList.remove('open');
+  currentCPId = null;
+  capturedDataURL = null;
+}
+
+function updateTrail(){
+  const pts = trailPoints.map(p=>p.join(',')).join(' ');
+  document.getElementById('guard-trail').setAttribute('points',pts);
+  // Move guard dot to last position
+  if(trailPoints.length>0){
+    const [cx,cy] = trailPoints[trailPoints.length-1];
+    const dot = document.getElementById('guard-dot-inner');
+    const lbl = document.getElementById('guard-dot-label');
+    const ripple = document.querySelector('#guard-pos-dot circle');
+    dot.setAttribute('cx',cx); dot.setAttribute('cy',cy);
+    lbl.setAttribute('x',cx); lbl.setAttribute('y',cy-18);
+    ripple.setAttribute('cx',cx); ripple.setAttribute('cy',cy);
+  }
+}
+
+// ════════════════════════════════════════════════
+//  MODAL OPEN / CLOSE
+// ════════════════════════════════════════════════
+function openScan(id){
+  const cp = CHECKPOINTS.find(c=>c.id===id);
+  if(cp.time){ showToast(`✓ ${cp.name} already verified at ${cp.time}`,'warn'); return; }
+  currentCPId = id;
+  capturedDataURL = null;
+  document.getElementById('modal-cp-title').textContent = `CHECKPOINT ${id} — ${cp.name}`;
+  document.getElementById('modal-cp-sub').textContent = `${cp.zone} | GPS + Face Verification Required`;
+  document.getElementById('cam-status').textContent = 'INITIALIZING CAMERA…';
+  document.getElementById('btn-capture').disabled = true;
+  document.getElementById('btn-capture').textContent = '⊙ CAPTURE FACE';
+  document.getElementById('btn-capture').onclick = capturePhoto;
+  document.getElementById('btn-verify').style.display = 'none';
+  document.getElementById('captured-img').style.display = 'none';
+  document.getElementById('captured-img').src = '';
+  document.getElementById('ai-panel').classList.remove('show');
+  document.getElementById('m-lat').textContent = '—';
+  document.getElementById('m-lng').textContent = '—';
+  document.getElementById('m-acc').textContent = '—';
+  document.getElementById('m-alt').textContent = '—';
+  document.getElementById('m-ts').textContent = '—';
+  document.getElementById('modal').classList.add('open');
+  updateMapDot(id,'active');
+  setGPSDataInModal();
+  startCamera();
+  addLog(`CP${id} [${cp.name}]: Scan session opened`,'tag');
+}
+
+function closeModal(){
+  stopCamera();
+  document.getElementById('modal').classList.remove('open');
+  if(currentCPId){
+    const cp = CHECKPOINTS.find(c=>c.id===currentCPId);
+    if(!cp.time) updateMapDot(currentCPId,'pending');
+    addLog(`CP${currentCPId}: Scan cancelled`,'warn');
+  }
+  currentCPId = null; capturedDataURL = null;
+}
+
+// ════════════════════════════════════════════════
+//  MAP DOT / LIST / PROGRESS
+// ════════════════════════════════════════════════
+function updateMapDot(id,state){
+  const g = document.getElementById(`svgcp-${id}`);
+  if(!g) return;
+  g.classList.remove('pending','active','done');
+  g.classList.add(state);
+  const c = g.querySelector('circle');
+  if(state==='done') c.setAttribute('fill','#00e87a');
+  if(state==='active') c.setAttribute('fill','#ffb930');
+  if(state==='pending') c.setAttribute('fill','#4a6580');
+}
+
+function renderList(){
+  document.getElementById('cp-list').innerHTML = CHECKPOINTS.map(cp=>{
+    const cls = cp.time ? 'done' : '';
+    return `<div class="cp-row ${cls}" onclick="openScan(${cp.id})">
+      <div class="cp-badge">${cp.time?'✓':cp.id}</div>
+      <div class="cp-info">
+        <div class="cp-name">${cp.name}</div>
+        <div class="cp-time">${cp.time ? cp.time + (cp.coords!='N/A'?' | GPS ✓':' | GPS N/A') : cp.zone}</div>
+      </div>
+      <div class="cp-status">${cp.time?'● DONE':'○ PENDING'}</div>
+    </div>`;
+  }).join('');
+  const done = CHECKPOINTS.filter(c=>c.time).length;
+  const pct = Math.round(done/8*100);
+  document.getElementById('progress-bar').style.width=pct+'%';
+  document.getElementById('prog-pct').textContent=pct+'%';
+  document.getElementById('prog-done').textContent=`${done} / 8 visited`;
+  document.getElementById('prog-remaining').textContent=`${8-done} remaining`;
+  if(done===8){
+    document.getElementById('complete-banner').classList.add('show');
+    document.getElementById('complete-time').textContent=
+      `All 8 verified — ${new Date().toLocaleTimeString('en-IN',{hour12:false})}`;
+    addLog('ALL CHECKPOINTS CLEARED — TOUR COMPLETE','tag');
+  }
+}
+
+// ════════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════════
+function setChip(id, state){
+  const el = document.getElementById(id);
+  el.classList.remove('ok','err-chip','warn-chip');
+  if(state==='ok') el.classList.add('ok');
+  if(state==='err') el.classList.add('err-chip');
+  if(state==='warn') el.classList.add('warn-chip');
+}
+
+function addLog(msg, type=''){
+  const log = document.getElementById('event-log');
+  const ts = new Date().toLocaleTimeString('en-IN',{hour12:false});
+  const d = document.createElement('div');
+  d.className='log-entry';
+  d.innerHTML=`<span class="${type}">[${ts}]</span> ${msg}`;
+  log.appendChild(d);
+  log.scrollTop=log.scrollHeight;
+}
+
+function showToast(msg, type=''){
+  const t = document.getElementById('toast');
+  t.textContent=msg; t.className='toast'+(type?' '+type:'');
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),3200);
+}
+
+// ════════════════════════════════════════════════
+//  PERMISSION GATE
+// ════════════════════════════════════════════════
+let permGPS = false, permCam = false;
+
+function setPermBadge(id, state, label){
+  const badge = document.getElementById('perm-badge-'+id);
+  const card  = document.getElementById('perm-card-'+id);
+  badge.className = 'perm-badge ' + state;
+  badge.textContent = label;
+  card.className = 'perm-card ' + (state==='granted'?'granted':state==='denied'?'denied':'');
+}
+function setPermMsg(msg, color='var(--muted)'){
+  const el = document.getElementById('perm-msg');
+  el.textContent = msg; el.style.color = color;
+}
+
+// Detect iframe context — camera/geo are blocked inside cross-origin iframes
+const IN_IFRAME = (() => { try { return window.self !== window.top; } catch(e){ return true; } })();
+
+async function requestAllPerms(){
+  const btn = document.getElementById('btn-grant-all');
+  btn.disabled = true;
+  btn.textContent = '⏳ REQUESTING…';
+
+  // ── If inside an iframe, permissions are always blocked by the browser.
+  //    Skip real API calls and go straight to DEMO mode.
+  if(IN_IFRAME){
+    setPermBadge('gps','loading','CHECKING…');
+    setPermBadge('cam','loading','CHECKING…');
+    setPermMsg('Detecting environment…', 'var(--amber)');
+    await sleep(600);
+
+    setPermBadge('gps','denied','⚠ IFRAME BLOCKED');
+    document.getElementById('perm-icon-gps').textContent = '⚠️';
+    await sleep(400);
+    setPermBadge('cam','denied','⚠ IFRAME BLOCKED');
+    document.getElementById('perm-icon-cam').textContent = '⚠️';
+    await sleep(300);
+
+    setPermMsg('Browser blocks camera & GPS inside embedded iframes. Launching DEMO mode with simulated data.', 'var(--amber)');
+    btn.textContent = '▶ LAUNCH IN DEMO MODE';
+    btn.disabled = false;
+    btn.onclick = () => { demoMode = true; launchApp(); };
+
+    // Also show "open standalone" hint
+    const hint = document.createElement('div');
+    hint.style.cssText='font-size:.6rem;color:var(--muted);text-align:center;margin-top:6px;line-height:1.6;letter-spacing:.5px';
+    hint.innerHTML='💡 <b style="color:var(--cyan)">For real camera & GPS:</b> save this page as an HTML file and open it directly in your browser (not inside an iframe/embed).';
+    document.getElementById('perm-msg').after(hint);
+    return;
+  }
+
+  // ── Real browser (not iframe) — attempt actual permissions ──
+
+  // --- GPS ---
+  setPermBadge('gps','loading','REQUESTING…');
+  setPermMsg('Waiting for location permission…', 'var(--amber)');
+  await new Promise(res => {
+    navigator.geolocation.getCurrentPosition(
+      pos => { liveGPS = buildGPS(pos); permGPS = true;
+        setPermBadge('gps','granted','✓ GRANTED');
+        document.getElementById('perm-icon-gps').textContent = '✅'; res(); },
+      err => { console.log(err.message); permGPS = false;
+        const m = err.code===1?'DENIED':err.code===2?'UNAVAILABLE':'TIMEOUT';
+        setPermBadge('gps','denied','✗ '+m);
+        document.getElementById('perm-icon-gps').textContent = '❌'; res(); },
+      {enableHighAccuracy:true, timeout:12000, maximumAge:0}
+    );
+  });
+
+  // --- Camera ---
+  setPermBadge('cam','loading','REQUESTING…');
+  setPermMsg('Waiting for camera permission…', 'var(--amber)');
+  await new Promise(res => {
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        stream.getTracks().forEach(t => t.stop());
+        permCam = true;
+        setPermBadge('cam','granted','✓ GRANTED');
+        document.getElementById('perm-icon-cam').textContent = '✅'; res();
+      })
+      .catch(err => {
+        console.log(err);
+        permCam = false;
+        const label = err.name==='NotAllowedError'?'DENIED':err.name==='NotFoundError'?'NO CAMERA':'FAILED';
+        setPermBadge('cam','denied','✗ '+label);
+        document.getElementById('perm-icon-cam').textContent = '❌'; res();
+      });
+  });
+
+  if(permGPS && permCam){
+    setPermMsg('All permissions granted — launching…', 'var(--green)');
+    setTimeout(launchApp, 800);
+  } else {
+    setPermMsg(permGPS||permCam ? 'Partial access — limited mode.' : 'Permissions denied — demo mode.', 'var(--amber)');
+    if(!permGPS && !permCam) demoMode = true;
+    btn.textContent = '▶ LAUNCH'; btn.disabled = false; btn.onclick = launchApp;
+  }
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function skipPerms(){
+  setPermMsg('Skipping permissions — limited mode.', 'var(--amber)');
+  launchApp();
+}
+
+function launchApp(){
+  document.getElementById('perm-gate').style.display = 'none';
+  renderList();
+  if(permGPS) initGeolocation();
+  else addLog('GPS skipped — location unavailable','warn');
+  setChip('chip-canvas','ok');
+  if(!permGPS) setChip('chip-geo','err'), setChip('chip-watch','err');
+  if(!permCam) setChip('chip-cam','err');
+  addLog('GuardTrack launched — click any checkpoint to begin scan','tag');
+}
+
+function buildGPS(pos){
+  const c = pos.coords;
+  return {lat:c.latitude,lng:c.longitude,acc:Math.round(c.accuracy),
+    alt:c.altitude?c.altitude.toFixed(1)+'m':'N/A',
+    spd:c.speed?(c.speed*3.6).toFixed(1)+' km/h':'N/A',
+    ts:new Date(pos.timestamp).toLocaleTimeString('en-IN',{hour12:false})};
+}
+
+// ════════════════════════════════════════════════
+//  INIT — show permission gate first
+// ════════════════════════════════════════════════
+// Check if permissions already granted (re-visit)
+(async () => {
+  let geoState = 'prompt', camState = 'prompt';
+  try {
+    const geoQ = await navigator.permissions.query({name:'geolocation'});
+    const camQ = await navigator.permissions.query({name:'camera'});
+    geoState = geoQ.state; camState = camQ.state;
+  } catch(e){ /* Firefox/Safari may not support permissions.query for camera */ }
+
+  if(geoState === 'granted' && camState === 'granted'){
+    // Auto-launch without prompting again
+    permGPS = true; permCam = true;
+    setPermBadge('gps','granted','✓ GRANTED');
+    setPermBadge('cam','granted','✓ GRANTED');
+    setPermMsg('Permissions already granted — auto-launching…','var(--green)');
+    setTimeout(launchApp, 700);
+  }
+  // else: gate stays visible for user to tap Grant
+})();
+</script>
+</body>
+</html>
